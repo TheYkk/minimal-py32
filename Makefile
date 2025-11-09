@@ -21,7 +21,7 @@ OBJDUMP := $(PREFIX)-objdump
 OBJSIZE := $(PREFIX)-size
 
 # Compiler Flags
-CFLAGS  := -g -Os -flto $(CPUARCH) -DF_CPU=$(F_CPU) -I$(SOURCE) -I.
+CFLAGS  := -ggdb -Os $(CPUARCH) -DF_CPU=$(F_CPU) -I$(SOURCE) -I.
 CFLAGS  += -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall -D$(MODEL)
 LDFLAGS := -T$(LDSCRIPT) #-static -lc -lm -nostartfiles -nostdlib -lgcc
 LDFLAGS += -Wl,--gc-sections,--build-id=none --specs=nano.specs --specs=nosys.specs -Wl,--print-memory-usage

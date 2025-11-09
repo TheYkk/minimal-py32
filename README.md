@@ -5,6 +5,11 @@
  - arm-none-eabi-*
  - pyOCD with PY32 packs installed
 
+## Install custom PY32 pack for pyOCD:
+1. Download the latest PY32 pack from https://www.keil.arm.com/packs/py32f0xx_dfp-puya/devices/
+1. run `pack-manager add-packs Puya.PY32F0xx_DFP.X.X.X.pack`
+1. run `pyocd pack update`
+1. run `pyocd pack find py32f002`
 
 ## Commands:
  - `make` - build everything
