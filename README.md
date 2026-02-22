@@ -6,10 +6,13 @@
  - pyOCD with PY32 packs installed
 
 ## Install custom PY32 pack for pyOCD:
+The PY32 pack is not in the online CMSIS pack index, so `pyocd pack find` will not find it.
+Instead, the local pack file is referenced directly in `pyocd.yaml`.
+
 1. Download the latest PY32 pack from https://www.keil.arm.com/packs/py32f0xx_dfp-puya/devices/
-1. run `pack-manager add-packs Puya.PY32F0xx_DFP.X.X.X.pack`
-1. run `pyocd pack update`
-1. run `pyocd pack find py32f002`
+1. Place the `.pack` file in the project root
+1. Update the pack path in `pyocd.yaml` if the version differs
+1. Verify with `pyocd list --targets` (look for `py32f030x6` with source `pack`)
 
 ## Commands:
  - `make` - build everything

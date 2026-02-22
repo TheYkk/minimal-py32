@@ -9,7 +9,7 @@ BIN     := bin
 
 # Microcontroller Settings
 F_CPU   := 24000000
-MODEL   := py32f002bx5
+MODEL   := py32f030x6
 LDSCRIPT:= ld/$(MODEL).ld
 CPUARCH := -mcpu=cortex-m0plus -mthumb
 
@@ -77,12 +77,12 @@ flash:	$(BIN)/$(TARGET).bin
 	@pyocd load -t $(MODEL) -f 1m $(BIN)/$(TARGET).bin
 
 connect:
-	@pyocd gdb -S -O semihost_console_type=console -t py32f030x4 -f 1m --elf $(BIN)/$(TARGET).elf
+	@pyocd gdb -S -O semihost_console_type=console -t py32f030x6 -f 1m --elf $(BIN)/$(TARGET).elf
 
 
 monitor:
 	@$(PREFIX)-gdb $(BIN)/$(TARGET).elf -ex="c" &
-	@pyocd gdb -S -O semihost_console_type=console -t py32f030x4 -f 1m --elf $(BIN)/$(TARGET).elf
+	@pyocd gdb -S -O semihost_console_type=console -t py32f030x6 -f 1m --elf $(BIN)/$(TARGET).elf
 
 
 debug:
