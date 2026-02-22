@@ -5,7 +5,11 @@
 # Files and Folders
 TARGET  := firmware
 SOURCE  := src
+LIB     := lib
 BIN     := bin
+
+# Library source files to compile (pick one variant per peripheral to avoid conflicts)
+LIBFILES := $(LIB)/debug_serial.c
 
 # Microcontroller Settings
 F_CPU   := 24000000
@@ -21,12 +25,12 @@ OBJDUMP := $(PREFIX)-objdump
 OBJSIZE := $(PREFIX)-size
 
 # Compiler Flags
-CFLAGS  := -ggdb -Os $(CPUARCH) -DF_CPU=$(F_CPU) -I$(SOURCE) -I.
+CFLAGS  := -ggdb -Os $(CPUARCH) -DF_CPU=$(F_CPU) -I$(SOURCE) -I$(LIB) -I.
 CFLAGS  += -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall -D$(MODEL)
 LDFLAGS := -T$(LDSCRIPT) #-static -lc -lm -nostartfiles -nostdlib -lgcc
 LDFLAGS += -Wl,--gc-sections,--build-id=none --specs=nano.specs --specs=nosys.specs -Wl,--print-memory-usage
-CFILES  := $(wildcard ./*.c) $(wildcard $(SOURCE)/*.c) $(wildcard $(SOURCE)/*.S)
-HFILES  := $(wildcard ./*.h) $(wildcard $(SOURCE)/*.h)
+CFILES  := $(wildcard ./*.c) $(wildcard $(SOURCE)/*.c) $(wildcard $(SOURCE)/*.S) $(LIBFILES)
+HFILES  := $(wildcard ./*.h) $(wildcard $(SOURCE)/*.h) $(wildcard $(LIB)/*.h)
 
 all:	$(BIN)/$(TARGET).lst $(BIN)/$(TARGET).map $(BIN)/$(TARGET).bin $(BIN)/$(TARGET).hex $(BIN)/$(TARGET).asm
 
@@ -93,6 +97,16 @@ debug:
 	@$(PREFIX)-gdb $(BIN)/$(TARGET).elf \
 		-ex "target remote localhost:3333" \
 		-ex "monitor reset halt"
+
+compile_commands:
+	@python3 -c "\
+import json, os; \
+root = os.getcwd(); \
+flags = '-I$(SOURCE) -I$(LIB) -DF_CPU=$(F_CPU) -D$(MODEL) $(CPUARCH) -ggdb -Os -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall'; \
+files = '$(CFILES)'.split(); \
+entries = [{'directory': root, 'file': os.path.join(root, f), 'command': '$(CC) ' + flags + ' -c ' + f} for f in files]; \
+fp = open('compile_commands.json', 'w'); json.dump(entries, fp, indent=2); fp.write('\n')"
+	@echo "Generated compile_commands.json"
 
 clean:
 	@echo "Cleaning all up ..."
