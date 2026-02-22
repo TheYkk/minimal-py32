@@ -12,7 +12,7 @@ BIN     := bin
 LIBFILES := $(LIB)/debug_serial.c
 
 # Microcontroller Settings
-F_CPU   := 24000000
+F_CPU   := 48000000
 MODEL   := py32f030x6
 LDSCRIPT:= ld/$(MODEL).ld
 CPUARCH := -mcpu=cortex-m0plus -mthumb
