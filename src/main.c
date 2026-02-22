@@ -26,6 +26,8 @@ static uint32_t s_systick = 0;
 #define PIN_LED PB0 // define LED pin
 int main(void)
 {
+    IWDG_start(2000); // start watchdog timer with 1000ms
+
     // 1. Initialize Debug Interface
     // Default is usually 115200 baud, 8N1. Pin selection depends on DEBUG_TX
     // define.
@@ -97,13 +99,16 @@ int main(void)
         // Percent sign
         DEBUG_printf("Literal Percent: 100%%\n");
 
-        DEBUG_println("--- TEST COMPLETE ---\n");
+        count++;
 
-        LOGI(TAG, "Count: %d", count++);
+        DEBUG_printf("--- TEST COMPLETE %d ---\n\n", count);
+
+        LOGI(TAG, "Count: %d", count);
 
         PIN_low(PIN_LED); // toggle LED on/off
+        IWDG_feed();
         // Wait 5 seconds before repeating
-        DLY_ms(5000);
+        DLY_ms(500);
     }
 }
 

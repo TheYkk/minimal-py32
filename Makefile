@@ -29,7 +29,7 @@ CFLAGS  := -ggdb -Os $(CPUARCH) -DF_CPU=$(F_CPU) -I$(SOURCE) -I$(LIB) -I.
 CFLAGS  += -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall -D$(MODEL)
 LDFLAGS := -T$(LDSCRIPT) #-static -lc -lm -nostartfiles -nostdlib -lgcc
 LDFLAGS += -Wl,--gc-sections,--build-id=none --specs=nano.specs --specs=nosys.specs -Wl,--print-memory-usage
-CFILES  := $(wildcard ./*.c) $(wildcard $(SOURCE)/*.c) $(wildcard $(SOURCE)/*.S)
+CFILES  := $(wildcard ./*.c) $(wildcard $(SOURCE)/*.c) $(wildcard $(SOURCE)/*.S) $(LIBFILES)
 HFILES  := $(wildcard ./*.h) $(wildcard $(SOURCE)/*.h) $(wildcard $(LIB)/*.h)
 
 all:	$(BIN)/$(TARGET).lst $(BIN)/$(TARGET).map $(BIN)/$(TARGET).bin $(BIN)/$(TARGET).hex $(BIN)/$(TARGET).asm
