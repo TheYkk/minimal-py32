@@ -77,16 +77,22 @@ flash:	$(BIN)/$(TARGET).bin
 	@pyocd load -t $(MODEL) -f 1m $(BIN)/$(TARGET).bin
 
 connect:
-	@pyocd gdb -S -O semihost_console_type=console -t py32f030x6 -f 1m --elf $(BIN)/$(TARGET).elf
-
+	@pyocd gdb -S -O semihost_console_type=console -t $(MODEL) -f 1m --elf $(BIN)/$(TARGET).elf
 
 monitor:
-	@$(PREFIX)-gdb $(BIN)/$(TARGET).elf -ex="c" &
-	@pyocd gdb -S -O semihost_console_type=console -t py32f030x6 -f 1m --elf $(BIN)/$(TARGET).elf
-
+	@pyocd gdb -S -O semihost_console_type=console -t $(MODEL) -f 1m --elf $(BIN)/$(TARGET).elf & \
+	PYOCD_PID=$$! ; \
+	sleep 1 ; \
+	$(PREFIX)-gdb $(BIN)/$(TARGET).elf \
+		-ex "target remote localhost:3333" \
+		-ex "load" \
+		-ex "c" ; \
+	kill $$PYOCD_PID 2>/dev/null ; true
 
 debug:
-	@$(PREFIX)-gdb $(BIN)/$(TARGET).elf -ex="monitor reset halt"
+	@$(PREFIX)-gdb $(BIN)/$(TARGET).elf \
+		-ex "target remote localhost:3333" \
+		-ex "monitor reset halt"
 
 clean:
 	@echo "Cleaning all up ..."
