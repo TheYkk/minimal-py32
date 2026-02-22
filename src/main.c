@@ -37,7 +37,7 @@ int main(void)
     LOGI(TAG, "Hello, PY32F0xx!");
     // Wait a moment for the serial monitor to stabilize
     DLY_ms(500);
-
+    uint32_t count = 0;
     while (1)
     {
         PIN_high(PIN_LED); // toggle LED on/off
@@ -98,6 +98,8 @@ int main(void)
         DEBUG_printf("Literal Percent: 100%%\n");
 
         DEBUG_println("--- TEST COMPLETE ---\n");
+
+        LOGI(TAG, "Count: %d", count++);
 
         PIN_low(PIN_LED); // toggle LED on/off
         // Wait 5 seconds before repeating
