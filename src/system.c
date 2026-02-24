@@ -21,8 +21,7 @@ void SYS_init(void) {
 
   // Init SYSTICK
   #if SYS_TICK_INIT > 0
-  SysTick->LOAD = (F_CPU / 1000) - 1; // set SysTick to 1ms
-  SysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_CLKSOURCE | SysTick_CTRL_TICKINT;
+  SysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_CLKSOURCE;
   #endif
 
   // Enable GPIO
@@ -145,8 +144,9 @@ void RTC_setAlarm(uint32_t val) {
 
 // Wait n+1 counts of SysTick
 void DLY_ticks(uint32_t n) {
-  const uint32_t start = SysTick->VAL;
-  while(( start - SysTick->VAL) < n);
+  SysTick->LOAD = n;
+  SysTick->VAL  = 0;
+  while(!(SysTick->CTRL & SysTick_CTRL_COUNTFLAG));
 }
 
 // ===================================================================================
