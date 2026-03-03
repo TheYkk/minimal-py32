@@ -6,7 +6,7 @@
 #include <string.h>
 #include <stdint.h>
 
-#define LED_PIN PB0
+#define LED_PIN PB1
 
 static uint8_t rx_buf[64];
 static uint8_t tx_buf[64];

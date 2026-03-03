@@ -4,8 +4,8 @@
 
 USB_Device *usb_device = NULL;
 
-#define USB_DM_PIN  11
-#define USB_DP_PIN  12
+#define USB_DM_PIN  1
+#define USB_DP_PIN  0
 
 #define USB_DM_PORT GPIOA
 #define USB_DP_PORT GPIOA
@@ -69,12 +69,12 @@ void USB_init(USB_Device *dev, const USB_Class *klass) {
 
 void USB_connect(void) {
     usb_state = USB_STATE_POWERED;
-    usb_dp_high();
+    USB_DM_PORT->PUPDR &= ~(0x3U << (USB_DM_PIN * 2));
+    USB_DM_PORT->PUPDR |= (0x1U << (USB_DM_PIN * 2));
 }
 
 void USB_disconnect(void) {
-    usb_dp_low();
-    usb_dm_low();
+    USB_DM_PORT->PUPDR &= ~(0x3U << (USB_DM_PIN * 2));
     usb_state = USB_STATE_DETACHED;
 }
 

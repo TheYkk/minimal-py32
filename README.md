@@ -14,15 +14,15 @@ A complete USB CDC (Virtual COM Port) implementation for PY32F030 microcontrolle
 
 ### Minimum Setup
 - PY32F030x6 or PY32F030x8 microcontroller
-- USB connector (D+ on PA12, D- on PA11)
-- 1.5kΩ pull-up resistor on D+ (for full-speed)
+- USB connector with series resistors and pull-up
 - 3.3V or 5V power supply
 
 ### Pin Configuration
 ```
-PA11 -> USB D- (Data Minus)
-PA12 -> USB D+ (Data Plus)
-PB0  -> LED (optional, for status)
+PA0  -> USB D+ through ~22Ω series resistor
+PA1  -> USB D- through ~22Ω series resistor
+PA1  -> Pull-up to 3.3V with 1.5kΩ (low-speed attach)
+PB1  -> LED (optional, for status)
 ```
 
 ## Building
