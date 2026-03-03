@@ -9,7 +9,7 @@ LIB     := lib
 BIN     := bin
 
 # Library source files to compile (pick one variant per peripheral to avoid conflicts)
-LIBFILES := $(LIB)/debug_serial.c
+LIBFILES := $(LIB)/debug_serial.c $(LIB)/usb_soft.c $(LIB)/usb_cdc.c
 
 # Microcontroller Settings
 F_CPU   := 48000000
@@ -25,8 +25,8 @@ OBJDUMP := $(PREFIX)-objdump
 OBJSIZE := $(PREFIX)-size
 
 # Compiler Flags
-CFLAGS  := -ggdb -Os $(CPUARCH) -DF_CPU=$(F_CPU) -I$(SOURCE) -I$(LIB) -I.
-CFLAGS  += -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall -D$(MODEL)
+CFLAGS  := -ggdb -Os $(CPUARCH) -DF_CPU=$(F_CPU) -I./src -I./lib -I. -Dpy32f030x6
+CFLAGS  += -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall -Dpy32f030x6
 LDFLAGS := -T$(LDSCRIPT) #-static -lc -lm -nostartfiles -nostdlib -lgcc
 LDFLAGS += -Wl,--gc-sections,--build-id=none --specs=nano.specs --specs=nosys.specs -Wl,--print-memory-usage
 CFILES  := $(wildcard ./*.c) $(wildcard $(SOURCE)/*.c) $(wildcard $(SOURCE)/*.S) $(LIBFILES)

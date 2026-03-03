@@ -1,504 +1,100 @@
-// ===================================================================================
-// Project:   Full Test for Serial Debug Functions (PY32F0xx)
-// Version:   v1.1
-// Description: Tests all functions in debug_serial.h/c
-// ===================================================================================
+#include "system.h"
+#include "gpio.h"
+#include "../lib/usb.h"
+#include "../lib/usb_cdc.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
 
-#include "debug_serial.h" // serial debug functions
-#include "gpio.h"         // GPIO functions
-#include "log.h"
-#include "system.h" // system functions
+#define LED_PIN PB0
 
-//------------------------------------------------------------------------------
-// Module constant defines
-//------------------------------------------------------------------------------
-#define TAG "main"
+static uint8_t rx_buf[64];
+static uint8_t tx_buf[64];
+static volatile uint32_t systick_counter = 0;
 
-//------------------------------------------------------------------------------
-// Module static variables
-//------------------------------------------------------------------------------
-static uint32_t s_systick = 0;
-
-#define SYSTICK_ONE_MILLISECOND ((uint32_t)F_CPU / 1000)
-#define SYSTICK_ONE_MICROSECOND ((uint32_t)F_CPU / 1000000)
-#define millis()                (SysTick->VAL / SYSTICK_ONE_MILLISECOND)
-
-// Linker symbols for memory usage calculation
-extern uint32_t _sdata, _edata, _sbss, _ebss, _sidata, _estack;
-
-// Factory calibration and info area addresses
-#define UID_BASE              0x1FFF0E00UL
-#define FACTORY_CFG_BASE      0x1FFF0F00UL
-#define HSI_CAL_4MHZ_ADDR    0x1FFF0F00UL
-#define HSI_CAL_8MHZ_ADDR    0x1FFF0F04UL
-#define HSI_CAL_16MHZ_ADDR   0x1FFF0F08UL
-#define HSI_CAL_22MHZ_ADDR   0x1FFF0F0CUL
-#define HSI_CAL_24MHZ_ADDR   0x1FFF0F10UL
-#define TS_CAL1_ADDR          0x1FFF0F14UL
-#define TS_CAL2_ADDR          0x1FFF0F18UL
-#define LSI_CAL_ADDR          0x1FFF0FA4UL
-#define DEV_ID_FLASH_ADDR    0x1FFF0FF8UL
-
-static void DEBUG_dump_chip_info(void)
-{
-    DEBUG_println("========================================================");
-    DEBUG_println("          PY32F0xx CHIP INFORMATION DUMP");
-    DEBUG_println("========================================================");
-
-    // --- ARM Cortex-M0+ Core ID ---
-    DEBUG_println("\n--- ARM CORE (SCB->CPUID) ---");
-    uint32_t cpuid = SCB->CPUID;
-    DEBUG_printf("  CPUID raw:        0x%08x\n", cpuid);
-    DEBUG_printf("  Implementer:      0x%02x (%s)\n",
-                 (cpuid >> 24) & 0xFF,
-                 ((cpuid >> 24) & 0xFF) == 0x41 ? "ARM" : "Unknown");
-    DEBUG_printf("  Variant:          %u\n", (cpuid >> 20) & 0xF);
-    DEBUG_printf("  Architecture:     0x%x (%s)\n",
-                 (cpuid >> 16) & 0xF,
-                 ((cpuid >> 16) & 0xF) == 0xC ? "ARMv6-M" : "Unknown");
-    DEBUG_printf("  Part Number:      0x%03x (%s)\n",
-                 (cpuid >> 4) & 0xFFF,
-                 ((cpuid >> 4) & 0xFFF) == 0xC60 ? "Cortex-M0+" : "Unknown");
-    DEBUG_printf("  Revision:         r%up%u\n", (cpuid >> 20) & 0xF, cpuid & 0xF);
-
-    // --- Device ID ---
-    DEBUG_println("\n--- DEVICE ID (DBGMCU) ---");
-    uint32_t idcode = DBGMCU->IDCODE;
-    DEBUG_printf("  DBG_IDCODE raw:   0x%08x\n", idcode);
-    DEBUG_printf("  DEV_ID:           0x%03x\n", idcode & 0xFFF);
-    DEBUG_printf("  REV_ID:           0x%04x\n", (idcode >> 16) & 0xFFFF);
-    uint32_t dev_id_flash = *(volatile uint32_t *)DEV_ID_FLASH_ADDR;
-    DEBUG_printf("  Flash@0x1FFF0FF8: 0x%08x\n", dev_id_flash);
-    DEBUG_printf("  DBG_CR:           0x%08x\n", DBGMCU->CR);
-    DEBUG_printf("  DBG_APB_FZ1:      0x%08x\n", DBGMCU->APBFZ1);
-    DEBUG_printf("  DBG_APB_FZ2:      0x%08x\n", DBGMCU->APBFZ2);
-
-    // --- Unique ID (UID) ---
-    DEBUG_println("\n--- UNIQUE ID (UID @ 0x1FFF0E00) ---");
-    volatile uint32_t *uid = (volatile uint32_t *)UID_BASE;
-    DEBUG_printf("  UID[0]: 0x%08x  UID[1]: 0x%08x\n", uid[0], uid[1]);
-    DEBUG_printf("  UID[2]: 0x%08x  UID[3]: 0x%08x\n", uid[2], uid[3]);
-    volatile uint8_t *uid8 = (volatile uint8_t *)UID_BASE;
-    DEBUG_printf("  Lot:    %c%c%c%c%c%c%c\n",
-                 uid8[0], uid8[1], uid8[2], uid8[3],
-                 uid8[5], uid8[6], uid8[7]);
-    DEBUG_printf("  Wafer:  %u\n", uid8[4]);
-    DEBUG_printf("  X-coord: %u  Y-coord: %u\n",
-                 uid8[10] | ((uid8[11] & 0x0F) << 8),
-                 uid8[9] | ((uid8[11] & 0xF0) << 4));
-    DEBUG_print("  UID hex dump:     ");
-    for (int i = 0; i < 16; i++) {
-        DEBUG_printB(uid8[i]);
-        DEBUG_write(' ');
-    }
-    DEBUG_write('\n');
-
-    // --- Compile-time Configuration ---
-    DEBUG_println("\n--- BUILD CONFIG ---");
-    DEBUG_printf("  F_CPU (compile):  %u Hz\n", (uint32_t)F_CPU);
-#if defined(PY32F002)
-    DEBUG_println("  Chip family:      PY32F002");
-#elif defined(PY32F003)
-    DEBUG_println("  Chip family:      PY32F003");
-#elif defined(PY32F030)
-    DEBUG_println("  Chip family:      PY32F030");
-#endif
-    DEBUG_printf("  SYS_CLK_INIT:     %u\n", (uint32_t)SYS_CLK_INIT);
-    DEBUG_printf("  SYS_TICK_INIT:    %u\n", (uint32_t)SYS_TICK_INIT);
-    DEBUG_printf("  SYS_GPIO_EN:      %u\n", (uint32_t)SYS_GPIO_EN);
-    DEBUG_printf("  SYS_USE_VECTORS:  %u\n", (uint32_t)SYS_USE_VECTORS);
-    DEBUG_printf("  SYS_USE_HSE:      %u\n", (uint32_t)SYS_USE_HSE);
-
-    // --- Clock Tree (RCC) ---
-    DEBUG_println("\n--- CLOCK TREE (RCC) ---");
-    uint32_t rcc_cr = RCC->CR;
-    DEBUG_printf("  RCC_CR raw:       0x%08x\n", rcc_cr);
-    DEBUG_printf("  HSI:              %s (ready: %s)\n",
-                 (rcc_cr & RCC_CR_HSION)  ? "ON"  : "OFF",
-                 (rcc_cr & RCC_CR_HSIRDY) ? "YES" : "NO");
-    uint32_t hsidiv = (rcc_cr >> 11) & 0x7;
-    uint32_t hsidiv_val = 1;
-    for (uint32_t i = 0; i < hsidiv; i++) hsidiv_val *= 2;
-    DEBUG_printf("  HSI divider:      /%u (HSIDIV=%u)\n", hsidiv_val, hsidiv);
-    DEBUG_printf("  HSE:              %s (ready: %s)\n",
-                 (rcc_cr & RCC_CR_HSEON)  ? "ON"  : "OFF",
-                 (rcc_cr & RCC_CR_HSERDY) ? "YES" : "NO");
-    DEBUG_printf("  HSE bypass:       %s\n", (rcc_cr & RCC_CR_HSEBYP) ? "ON" : "OFF");
-    DEBUG_printf("  HSE CSS:          %s\n", (rcc_cr & RCC_CR_CSSON)  ? "ON" : "OFF");
-    DEBUG_printf("  PLL:              %s (ready: %s)\n",
-                 (rcc_cr & RCC_CR_PLLON)  ? "ON"  : "OFF",
-                 (rcc_cr & RCC_CR_PLLRDY) ? "YES" : "NO");
-
-    uint32_t rcc_cfgr = RCC->CFGR;
-    DEBUG_printf("  RCC_CFGR raw:     0x%08x\n", rcc_cfgr);
-    uint32_t sw  = rcc_cfgr & 0x7;
-    uint32_t sws = (rcc_cfgr >> 3) & 0x7;
-    const char *clk_names[] = {"HSISYS", "HSE", "PLL", "LSI", "LSE"};
-    DEBUG_printf("  SW (selected):    %u (%s)\n", sw,  sw  < 5 ? clk_names[sw]  : "?");
-    DEBUG_printf("  SWS (active):     %u (%s)\n", sws, sws < 5 ? clk_names[sws] : "?");
-
-    uint32_t hpre = (rcc_cfgr >> 8) & 0xF;
-    uint32_t ahb_div = 1;
-    if (hpre >= 0x8) {
-        static const uint16_t ahb_table[] = {2, 4, 8, 16, 64, 128, 256, 512};
-        ahb_div = ahb_table[hpre - 0x8];
-    }
-    DEBUG_printf("  AHB prescaler:    /%u (HPRE=0x%x)\n", ahb_div, hpre);
-
-    uint32_t ppre = (rcc_cfgr >> 12) & 0x7;
-    uint32_t apb_div = 1;
-    if (ppre >= 0x4) {
-        static const uint8_t apb_table[] = {2, 4, 8, 16};
-        apb_div = apb_table[ppre - 0x4];
-    }
-    DEBUG_printf("  APB prescaler:    /%u (PPRE=0x%x)\n", apb_div, ppre);
-
-    uint32_t mcosel = (rcc_cfgr >> 24) & 0x7;
-    uint32_t mcopre = (rcc_cfgr >> 28) & 0x7;
-    const char *mco_names[] = {"OFF", "SYSCLK", "HSI_10M", "HSI", "HSE", "PLL", "LSI", "LSE"};
-    DEBUG_printf("  MCO source:       %s (MCOSEL=%u)\n", mco_names[mcosel], mcosel);
-    uint32_t mco_div = 1;
-    for (uint32_t i = 0; i < mcopre; i++) mco_div *= 2;
-    DEBUG_printf("  MCO prescaler:    /%u\n", mco_div);
-
-    uint32_t rcc_icscr = RCC->ICSCR;
-    DEBUG_printf("  RCC_ICSCR raw:    0x%08x\n", rcc_icscr);
-    uint32_t hsi_fs = (rcc_icscr >> 13) & 0x7;
-    const char *hsi_freq_names[] = {"4MHz", "8MHz", "16MHz", "22.12MHz", "24MHz", "?", "?", "?"};
-    DEBUG_printf("  HSI_FS:           %u (%s)\n", hsi_fs, hsi_freq_names[hsi_fs]);
-    DEBUG_printf("  HSI_TRIM:         0x%04x\n", rcc_icscr & 0x1FFF);
-    DEBUG_printf("  LSI_TRIM:         0x%03x\n", (rcc_icscr >> 16) & 0x1FF);
-
-    DEBUG_printf("  RCC_PLLCFGR raw:  0x%08x\n", RCC->PLLCFGR);
-    DEBUG_printf("  PLL source:       %s\n", (RCC->PLLCFGR & 1) ? "HSE" : "HSI");
-
-    DEBUG_printf("  RCC_ECSCR raw:    0x%08x\n", RCC->ECSCR);
-    uint32_t hse_freq = (RCC->ECSCR >> 2) & 0x3;
-    const char *hse_ranges[] = {"OFF/<=4MHz", "4-8MHz", "8-16MHz", "16-32MHz"};
-    DEBUG_printf("  HSE freq range:   %s\n", hse_ranges[hse_freq]);
-
-    // --- Low-speed clocks ---
-    uint32_t rcc_csr = RCC->CSR;
-    DEBUG_printf("  RCC_CSR raw:      0x%08x\n", rcc_csr);
-    DEBUG_printf("  LSI:              %s (ready: %s)\n",
-                 (rcc_csr & RCC_CSR_LSION)  ? "ON"  : "OFF",
-                 (rcc_csr & RCC_CSR_LSIRDY) ? "YES" : "NO");
-    uint32_t rcc_bdcr = RCC->BDCR;
-    DEBUG_printf("  RCC_BDCR raw:     0x%08x\n", rcc_bdcr);
-    DEBUG_printf("  LSE:              %s (ready: %s)\n",
-                 (rcc_bdcr & RCC_BDCR_LSEON)  ? "ON"  : "OFF",
-                 (rcc_bdcr & RCC_BDCR_LSERDY) ? "YES" : "NO");
-    DEBUG_printf("  LSE bypass:       %s\n", (rcc_bdcr & RCC_BDCR_LSEBYP) ? "ON" : "OFF");
-    DEBUG_printf("  RTC enabled:      %s\n", (rcc_bdcr & RCC_BDCR_RTCEN)  ? "YES" : "NO");
-
-    // --- Peripheral Clock Enables ---
-    DEBUG_println("\n--- PERIPHERAL CLOCKS ---");
-    DEBUG_printf("  RCC_IOPENR:       0x%08x\n", RCC->IOPENR);
-    DEBUG_printf("    GPIOA: %s  GPIOB: %s  GPIOF: %s\n",
-                 (RCC->IOPENR & RCC_IOPENR_GPIOAEN) ? "EN" : "--",
-                 (RCC->IOPENR & RCC_IOPENR_GPIOBEN) ? "EN" : "--",
-                 (RCC->IOPENR & RCC_IOPENR_GPIOFEN) ? "EN" : "--");
-    DEBUG_printf("  RCC_AHBENR:       0x%08x\n", RCC->AHBENR);
-    DEBUG_printf("    DMA: %s  CRC: %s\n",
-                 (RCC->AHBENR & RCC_AHBENR_DMAEN)  ? "EN" : "--",
-                 (RCC->AHBENR & RCC_AHBENR_CRCEN)  ? "EN" : "--");
-    DEBUG_printf("  RCC_APBENR1:      0x%08x\n", RCC->APBENR1);
-    DEBUG_printf("  RCC_APBENR2:      0x%08x\n", RCC->APBENR2);
-
-    // --- Clock Interrupt Flags ---
-    DEBUG_printf("  RCC_CIER:         0x%08x\n", RCC->CIER);
-    DEBUG_printf("  RCC_CIFR:         0x%08x\n", RCC->CIFR);
-
-    // --- Flash Configuration ---
-    DEBUG_println("\n--- FLASH ---");
-    DEBUG_printf("  FLASH_ACR raw:    0x%08x\n", FLASH->ACR);
-    DEBUG_printf("  Latency:          %u wait state(s)\n", FLASH->ACR & 0x1);
-    DEBUG_printf("  FLASH_SR raw:     0x%08x\n", FLASH->SR);
-    DEBUG_printf("    BSY: %u  OPTVERR: %u  WRPERR: %u  EOP: %u\n",
-                 (FLASH->SR >> 16) & 1, (FLASH->SR >> 15) & 1,
-                 (FLASH->SR >> 4)  & 1,  FLASH->SR & 1);
-    DEBUG_printf("  FLASH_CR raw:     0x%08x\n", FLASH->CR);
-    DEBUG_printf("    LOCK: %u  OPTLOCK: %u\n",
-                 (FLASH->CR >> 31) & 1, (FLASH->CR >> 30) & 1);
-
-    // --- Option Bytes ---
-    DEBUG_println("\n--- OPTION BYTES ---");
-    DEBUG_printf("  FLASH_OPTR raw:   0x%08x\n", FLASH->OPTR);
-    uint32_t optr = FLASH->OPTR;
-    uint32_t rdp = optr & 0xFF;
-    DEBUG_printf("  RDP:              0x%02x (%s)\n", rdp,
-                 rdp == 0xAA ? "Level 0 - no protection" :
-                 rdp == 0xCC ? "Level 2 - permanent"     : "Level 1 - active");
-    DEBUG_printf("  BOR_EN:           %u\n", (optr >> 8) & 1);
-    uint32_t bor_lev = (optr >> 9) & 0x7;
-    const char *bor_thresholds[] = {
-        "1.7-1.8V", "1.9-2.0V", "2.1-2.2V", "2.3-2.4V",
-        "2.5-2.6V", "2.7-2.8V", "2.9-3.0V", "3.1-3.2V"
-    };
-    DEBUG_printf("  BOR_LEV:          %u (%s)\n", bor_lev, bor_thresholds[bor_lev]);
-    DEBUG_printf("  IWDG_SW:          %u (%s watchdog)\n",
-                 (optr >> 12) & 1, ((optr >> 12) & 1) ? "Software" : "Hardware");
-    DEBUG_printf("  WWDG_SW:          %u (%s watchdog)\n",
-                 (optr >> 13) & 1, ((optr >> 13) & 1) ? "Software" : "Hardware");
-    DEBUG_printf("  NRST_MODE:        %u (%s)\n",
-                 (optr >> 14) & 1, ((optr >> 14) & 1) ? "GPIO" : "Reset only");
-    DEBUG_printf("  nBOOT1:           %u\n", (optr >> 15) & 1);
-
-    DEBUG_printf("  FLASH_SDKR raw:   0x%08x\n", FLASH->SDKR);
-    uint32_t sdk_strt = FLASH->SDKR & 0x1F;
-    uint32_t sdk_end  = (FLASH->SDKR >> 8) & 0x1F;
-    DEBUG_printf("  SDK_STRT:         %u (addr 0x%08x)\n", sdk_strt, 0x08000000 + sdk_strt * 2048);
-    DEBUG_printf("  SDK_END:          %u (addr 0x%08x)\n", sdk_end,  0x08000000 + (sdk_end + 1) * 2048 - 1);
-
-    DEBUG_printf("  FLASH_WRPR raw:   0x%08x\n", FLASH->WRPR);
-    uint32_t wrp = FLASH->WRPR & 0xFFFF;
-    DEBUG_print("  WRP sectors:      ");
-    for (int i = 0; i < 16; i++) {
-        DEBUG_printf("%u", (wrp >> i) & 1);
-    }
-    DEBUG_println(" (1=open, 0=locked)");
-
-    DEBUG_print("  OB raw bytes:     ");
-    volatile uint8_t *ob_raw = (volatile uint8_t *)OB_BASE;
-    for (int i = 0; i < 16; i++) {
-        DEBUG_printB(ob_raw[i]);
-        DEBUG_write(' ');
-    }
-    DEBUG_write('\n');
-
-    // --- Power (PWR) ---
-    DEBUG_println("\n--- POWER (PWR) ---");
-    RCC->APBENR1 |= RCC_APBENR1_PWREN;
-    DEBUG_printf("  PWR_CR1 raw:      0x%08x\n", PWR->CR1);
-    DEBUG_printf("    LPR (low-pwr reg):   %u\n", (PWR->CR1 >> 14) & 1);
-    DEBUG_printf("    VOS (voltage scale): %u\n", (PWR->CR1 >> 9) & 1);
-    DEBUG_printf("    DBP (backup access): %u\n", (PWR->CR1 >> 8) & 1);
-    DEBUG_printf("    SRAM_RETV:           %u\n", (PWR->CR1 >> 16) & 0x7);
-    DEBUG_printf("    HSION_CTRL:          %u\n", (PWR->CR1 >> 19) & 1);
-    DEBUG_printf("  PWR_CR2 raw:      0x%08x\n", PWR->CR2);
-    DEBUG_printf("    PVDE:           %u\n", PWR->CR2 & 1);
-    uint32_t pvdt = (PWR->CR2 >> 4) & 0x7;
-    DEBUG_printf("    PVD threshold:  %u (%s)\n", pvdt, bor_thresholds[pvdt]);
-    DEBUG_printf("    PVD source:     %s\n", ((PWR->CR2 >> 2) & 1) ? "VDDIO2" : "VCC");
-    DEBUG_printf("    Filter enable:  %u\n", (PWR->CR2 >> 8) & 1);
-    DEBUG_printf("  PWR_SR raw:       0x%08x\n", PWR->SR);
-    DEBUG_printf("    PVDO:           %u (%s)\n",
-                 (PWR->SR >> 11) & 1,
-                 ((PWR->SR >> 11) & 1) ? "VCC < threshold" : "VCC >= threshold");
-
-    // --- Reset Flags ---
-    DEBUG_println("\n--- RESET FLAGS (RCC_CSR) ---");
-    DEBUG_printf("  PIN reset:        %s\n", (rcc_csr & RCC_CSR_PINRSTF)  ? "YES" : "no");
-    DEBUG_printf("  POR/BOR reset:    %s\n", (rcc_csr & RCC_CSR_PWRRSTF)  ? "YES" : "no");
-    DEBUG_printf("  Software reset:   %s\n", (rcc_csr & RCC_CSR_SFTRSTF)  ? "YES" : "no");
-    DEBUG_printf("  IWDG reset:       %s\n", (rcc_csr & RCC_CSR_IWDGRSTF) ? "YES" : "no");
-    DEBUG_printf("  WWDG reset:       %s\n", (rcc_csr & RCC_CSR_WWDGRSTF) ? "YES" : "no");
-    DEBUG_printf("  OBL reset:        %s\n", (rcc_csr & RCC_CSR_OBLRSTF)  ? "YES" : "no");
-    DEBUG_printf("  NRST filter dis:  %u\n", (rcc_csr >> 8) & 1);
-
-    // --- SYSCFG ---
-    DEBUG_println("\n--- SYSCFG ---");
-    RCC->APBENR2 |= RCC_APBENR2_SYSCFGEN;
-    DEBUG_printf("  SYSCFG_CFGR1 raw: 0x%08x\n", SYSCFG->CFGR1);
-    uint32_t mem_mode = SYSCFG->CFGR1 & 0x3;
-    const char *mem_modes[] = {"Main Flash", "System Flash", "?", "SRAM"};
-    DEBUG_printf("  MEM_MODE:         %u (%s @ 0x0)\n", mem_mode, mem_modes[mem_mode]);
-    DEBUG_printf("  SYSCFG_CFGR2 raw: 0x%08x\n", SYSCFG->CFGR2);
-    DEBUG_printf("    LOCKUP_LOCK:    %u\n", SYSCFG->CFGR2 & 1);
-    DEBUG_printf("    PVD_LOCK:       %u\n", (SYSCFG->CFGR2 >> 2) & 1);
-    DEBUG_printf("  SYSCFG_CFGR3 raw: 0x%08x\n", SYSCFG->CFGR3);
-    DEBUG_printf("    DMA1_MAP:       0x%02x\n", SYSCFG->CFGR3 & 0x1F);
-    DEBUG_printf("    DMA2_MAP:       0x%02x\n", (SYSCFG->CFGR3 >> 8) & 0x1F);
-    DEBUG_printf("    DMA3_MAP:       0x%02x\n", (SYSCFG->CFGR3 >> 16) & 0x1F);
-
-    // --- Vector Table ---
-    DEBUG_println("\n--- VECTOR TABLE & CORE REGS ---");
-    DEBUG_printf("  SCB->VTOR:        0x%08x\n", SCB->VTOR);
-    DEBUG_printf("  SCB->ICSR:        0x%08x\n", SCB->ICSR);
-    DEBUG_printf("  SCB->AIRCR:       0x%08x\n", SCB->AIRCR);
-    DEBUG_printf("  SCB->SCR:         0x%08x\n", SCB->SCR);
-    DEBUG_printf("    SLEEPDEEP:      %u\n", (SCB->SCR >> 2) & 1);
-    DEBUG_printf("    SLEEPONEXIT:    %u\n", (SCB->SCR >> 1) & 1);
-    DEBUG_printf("    SEVONPEND:      %u\n", (SCB->SCR >> 4) & 1);
-    DEBUG_printf("  SCB->CCR:         0x%08x\n", SCB->CCR);
-    DEBUG_printf("  SCB->SHCSR:       0x%08x\n", SCB->SHCSR);
-    DEBUG_printf("  PRIMASK:          %u (%s)\n", __get_PRIMASK(),
-                 __get_PRIMASK() ? "IRQs disabled" : "IRQs enabled");
-    DEBUG_printf("  CONTROL:          0x%08x\n", __get_CONTROL());
-    DEBUG_printf("  MSP:              0x%08x\n", __get_MSP());
-
-    // --- SysTick ---
-    DEBUG_println("\n--- SYSTICK ---");
-    DEBUG_printf("  CTRL:             0x%08x\n", SysTick->CTRL);
-    DEBUG_printf("    ENABLE:         %u\n", SysTick->CTRL & 1);
-    DEBUG_printf("    TICKINT:        %u\n", (SysTick->CTRL >> 1) & 1);
-    DEBUG_printf("    CLKSOURCE:      %s\n", ((SysTick->CTRL >> 2) & 1) ? "CPU" : "External");
-    DEBUG_printf("  LOAD:             %u\n", SysTick->LOAD);
-    DEBUG_printf("  VAL:              %u\n", SysTick->VAL);
-
-    // --- NVIC State ---
-    DEBUG_println("\n--- NVIC ---");
-    DEBUG_printf("  ISER (enabled):   0x%08x\n", NVIC->ISER[0]);
-    DEBUG_printf("  ISPR (pending):   0x%08x\n", NVIC->ISPR[0]);
-
-    // --- IWDG ---
-    DEBUG_println("\n--- IWDG ---");
-    DEBUG_printf("  IWDG_SR raw:      0x%08x\n", IWDG->SR);
-    DEBUG_printf("    PVU (presc upd): %u\n", IWDG->SR & 1);
-    DEBUG_printf("    RVU (reload upd): %u\n", (IWDG->SR >> 1) & 1);
-
-    // --- Factory Calibration Values ---
-    DEBUG_println("\n--- FACTORY CALIBRATION (0x1FFF0Fxx) ---");
-    DEBUG_printf("  HSI  4MHz cal:    0x%08x\n", *(volatile uint32_t *)HSI_CAL_4MHZ_ADDR);
-    DEBUG_printf("  HSI  8MHz cal:    0x%08x\n", *(volatile uint32_t *)HSI_CAL_8MHZ_ADDR);
-    DEBUG_printf("  HSI 16MHz cal:    0x%08x\n", *(volatile uint32_t *)HSI_CAL_16MHZ_ADDR);
-    DEBUG_printf("  HSI 22MHz cal:    0x%08x\n", *(volatile uint32_t *)HSI_CAL_22MHZ_ADDR);
-    DEBUG_printf("  HSI 24MHz cal:    0x%08x\n", *(volatile uint32_t *)HSI_CAL_24MHZ_ADDR);
-    DEBUG_printf("  TS_CAL1 (30C):    0x%04x (%u)\n",
-                 *(volatile uint32_t *)TS_CAL1_ADDR & 0xFFF,
-                 *(volatile uint32_t *)TS_CAL1_ADDR & 0xFFF);
-    DEBUG_printf("  TS_CAL2 (85C):    0x%04x (%u)\n",
-                 *(volatile uint32_t *)TS_CAL2_ADDR & 0xFFF,
-                 *(volatile uint32_t *)TS_CAL2_ADDR & 0xFFF);
-    DEBUG_printf("  LSI calibration:  0x%08x\n", *(volatile uint32_t *)LSI_CAL_ADDR);
-
-    // --- Flash Timing Parameters (for current clock) ---
-    DEBUG_println("\n--- FLASH TIMING REGS ---");
-    DEBUG_printf("  FLASH_TS0:        0x%08x\n", FLASH->TS0);
-    DEBUG_printf("  FLASH_TS1:        0x%08x\n", FLASH->TS1);
-    DEBUG_printf("  FLASH_TS2P:       0x%08x\n", FLASH->TS2P);
-    DEBUG_printf("  FLASH_TPS3:       0x%08x\n", FLASH->TPS3);
-    DEBUG_printf("  FLASH_TS3:        0x%08x\n", FLASH->TS3);
-    DEBUG_printf("  FLASH_PERTPE:     0x%08x\n", FLASH->PERTPE);
-    DEBUG_printf("  FLASH_SMERTPE:    0x%08x\n", FLASH->SMERTPE);
-    DEBUG_printf("  FLASH_PRGTPE:     0x%08x\n", FLASH->PRGTPE);
-    DEBUG_printf("  FLASH_PRETPE:     0x%08x\n", FLASH->PRETPE);
-    DEBUG_printf("  FLASH_STCR:       0x%08x\n", FLASH->STCR);
-
-    // --- Memory Layout (from linker) ---
-    DEBUG_println("\n--- MEMORY LAYOUT ---");
-    uint32_t data_size = (uint32_t)&_edata - (uint32_t)&_sdata;
-    uint32_t bss_size  = (uint32_t)&_ebss  - (uint32_t)&_sbss;
-    uint32_t stack_top = (uint32_t)&_estack;
-    DEBUG_printf("  .data:            0x%08x - 0x%08x (%u bytes)\n",
-                 (uint32_t)&_sdata, (uint32_t)&_edata, data_size);
-    DEBUG_printf("  .bss:             0x%08x - 0x%08x (%u bytes)\n",
-                 (uint32_t)&_sbss, (uint32_t)&_ebss, bss_size);
-    DEBUG_printf("  Stack top:        0x%08x\n", stack_top);
-    DEBUG_printf("  Current MSP:      0x%08x\n", __get_MSP());
-    uint32_t stack_used = stack_top - __get_MSP();
-    DEBUG_printf("  Stack used (est): ~%u bytes\n", stack_used);
-    DEBUG_printf("  RAM used static:  %u bytes (.data+.bss)\n", data_size + bss_size);
-    DEBUG_printf("  FLASH .data src:  0x%08x\n", (uint32_t)&_sidata);
-
-    // --- EXTI State ---
-    DEBUG_println("\n--- EXTI ---");
-    DEBUG_printf("  IMR (int mask):   0x%08x\n", EXTI->IMR);
-    DEBUG_printf("  EMR (evt mask):   0x%08x\n", EXTI->EMR);
-    DEBUG_printf("  RTSR (rising):    0x%08x\n", EXTI->RTSR);
-    DEBUG_printf("  FTSR (falling):   0x%08x\n", EXTI->FTSR);
-    DEBUG_printf("  PR (pending):     0x%08x\n", EXTI->PR);
-
-    DEBUG_println("\n========================================================");
-    DEBUG_println("          END OF CHIP INFO DUMP");
-    DEBUG_println("========================================================\n");
+void SysTick_Handler(void) {
+    systick_counter++;
 }
 
-#define PIN_LED PB0 // define LED pin
-int main(void)
-{
-    IWDG_start(2000); // start watchdog timer with 1000ms
+static void delay_ms(uint32_t ms) {
+    uint32_t start = systick_counter;
+    while ((systick_counter - start) < ms);
+}
 
-    // 1. Initialize Debug Interface
-    // Default is usually 115200 baud, 8N1. Pin selection depends on DEBUG_TX
-    // define.
-    DEBUG_init();
-    // Setup
-    PIN_output(PIN_LED); // set LED pin as output
-    LOG_Init(eLOG_LEVEL_DEBUG, &s_systick);
+static void led_init(void) {
+    RCC->IOPENR |= RCC_IOPENR_GPIOBEN;
+    GPIOB->MODER &= ~(0x3 << (LED_PIN * 2));
+    GPIOB->MODER |= (0x1 << (LED_PIN * 2));
+}
 
-    LOGI(TAG, "Hello, PY32F0xx!");
-    DLY_ms(500);
-    DEBUG_dump_chip_info();
-    uint32_t count = 0;
-    while (1)
-    {
-        PIN_high(PIN_LED); // toggle LED on/off
-        DEBUG_println("--- STARTING SERIAL DEBUG TEST ---");
+static void led_on(void) {
+    GPIOB->BSRR = (1 << LED_PIN);
+}
 
-        // 2. Test Basic String Functions
-        DEBUG_print("This is DEBUG_print (no newline). ");
-        DEBUG_println("This is DEBUG_println (with newline).");
+static void led_off(void) {
+    GPIOB->BRR = (1 << LED_PIN);
+}
 
-        // 3. Test Raw Character Write
-        DEBUG_print("Manual characters: ");
-        DEBUG_write('O');
-        DEBUG_write('K');
-        DEBUG_write('\n');
+static void led_toggle(void) {
+    GPIOB->ODR ^= (1 << LED_PIN);
+}
 
-        // 4. Test Hex Formatting Functions
-        DEBUG_print("Hex Nibble (4-bit, 0xA):   ");
-        DEBUG_printN(0xA);
-        DEBUG_write('\n');
-        DEBUG_print("Hex Byte (8-bit, 0xFE):    ");
-        DEBUG_printB(0xFE);
-        DEBUG_write('\n');
-        DEBUG_print("Hex Half (16-bit, 0xABCD): ");
-        DEBUG_printH(0xABCD);
-        DEBUG_write('\n');
-        DEBUG_print("Hex Word (32-bit, 0x12345678): ");
-        DEBUG_printW(0x12345678);
-        DEBUG_write('\n');
-
-        // 5. Test Decimal Function
-        DEBUG_print("Decimal (uint32_t max):     ");
-        DEBUG_printD(4294967295);
-        DEBUG_write('\n');
-        DEBUG_print("Decimal (standard):        ");
-        DEBUG_printD(123456);
-        DEBUG_write('\n');
-
-        // 6. Test Printf Functionality
-        DEBUG_println("--- Testing DEBUG_printf ---");
-
-        // String and Char
-        DEBUG_printf("String: %s | Char: %c\n", "Hello PY32", '!');
-
-        // Decimal (Signed and Unsigned)
-        int32_t neg_val = -1234;
-        uint32_t pos_val = 5678;
-        DEBUG_printf("Signed: %d | Unsigned: %u\n", neg_val, pos_val);
-
-        // Hex and Binary
-        DEBUG_printf("Hex: %x | Binary: %b\n", 0xDEADBEEF, 0b10101010);
-
-        // Padding (Leading zeros / width)
-        // %02d style: 0 is the pad char, 2 is the width
-        DEBUG_printf("Padding (05d): %05d\n", 42);
-        DEBUG_printf("Padding (10u): %10u\n", 123);
-
-        // Percent sign
-        DEBUG_printf("Literal Percent: 100%%\n");
-
-        count++;
-
-        DEBUG_printf("--- TEST COMPLETE %d ---\n\n", count);
-
-        LOGI(TAG, "Count: %d", count);
-
-        PIN_low(PIN_LED); // toggle LED on/off
-        IWDG_feed();
-        // Wait 5 seconds before repeating
-        DLY_ms(500);
+static void usb_poll_handler(void) {
+    USB_poll();
+    
+    if (CDC_connected()) {
+        uint16_t len = CDC_recv(rx_buf, sizeof(rx_buf));
+        if (len > 0) {
+            for (uint16_t i = 0; i < len; i++) {
+                tx_buf[i] = rx_buf[i];
+            }
+            CDC_send(tx_buf, len);
+            led_toggle();
+        }
     }
 }
 
-/**
- * @brief  SysTick interrupt handler.
- * @param  None
- * @return None
- */
-void SysTick_Handler(void)
-{
-    s_systick++;
+int main(void) {
+    SystemInit();
+    
+    RCC->IOPENR |= RCC_IOPENR_GPIOBEN;
+    SysTick_Config(48000);
+    
+    led_init();
+    led_off();
+    
+    const USB_Class *cdc = CDC_get_class();
+    USB_Device dev;
+    memset(&dev, 0, sizeof(dev));
+    dev.init = NULL;
+    dev.poll = usb_poll_handler;
+    dev.send = USB_send_data;
+    dev.recv = USB_recv_data;
+    dev.recv_complete = NULL;
+    dev.status_stage = NULL;
+    dev.set_config = NULL;
+    dev.state = USB_STATE_DETACHED;
+    dev.address = 0;
+    dev.configuration = 0;
+    
+    USB_init(&dev, cdc);
+    USB_connect();
+    
+    uint32_t toggle_timer = 0;
+    
+    while (1) {
+        usb_poll_handler();
+        
+        if ((systick_counter - toggle_timer) > 1000) {
+            toggle_timer = systick_counter;
+            if (CDC_connected()) {
+                const char *msg = "USB CDC Connected\r\n";
+                CDC_send((const uint8_t *)msg, strlen(msg));
+            }
+        }
+        
+        delay_ms(10);
+    }
+    
+    return 0;
 }
