@@ -12,7 +12,7 @@ BIN     := bin
 LIBFILES := $(LIB)/debug_serial.c 
 
 # Microcontroller Settings
-F_CPU   := 24000000
+F_CPU   := 48000000
 MODEL   := py32f030x6
 LDSCRIPT:= ld/$(MODEL).ld
 CPUARCH := -mcpu=cortex-m0plus -mthumb
@@ -76,7 +76,7 @@ asm:	$(BIN)/$(TARGET).asm
 
 dump: $(BIN)/$(TARGET)_dump.bin
 
-flash:	$(BIN)/$(TARGET).bin
+flash:	all
 	@echo "Uploading to MCU ..."
 	@pyocd load -t $(MODEL) -f 1m $(BIN)/$(TARGET).bin
 
@@ -107,6 +107,9 @@ files = '$(CFILES)'.split(); \
 entries = [{'directory': root, 'file': os.path.join(root, f), 'command': '$(CC) ' + flags + ' -c ' + f} for f in files]; \
 fp = open('compile_commands.json', 'w'); json.dump(entries, fp, indent=2); fp.write('\n')"
 	@echo "Generated compile_commands.json"
+
+size:	$(BIN)/$(TARGET).elf
+	@python3 size_analysis.py
 
 clean:
 	@echo "Cleaning all up ..."
