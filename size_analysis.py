@@ -5,6 +5,7 @@ Parses the symbol table and section headers to show where flash and RAM
 are being used, grouped by section, source file, and individual symbol.
 """
 
+import argparse
 import subprocess
 import sys
 import os
@@ -21,7 +22,7 @@ RAM_ORIGIN = 0x20000000
 RAM_SIZE = 4 * 1024
 
 FLASH_SECTIONS = {".vectors", ".text", ".rodata", ".ARM.extab", ".ARM",
-                  ".preinit_array", ".init_array", ".fini_array"}
+                  ".preinit_array", ".init_array", ".fini_array", ".ctors", ".dtors"}
 RAM_SECTIONS = {".data", ".bss"}
 
 LINKER_MARKERS = {"end", "_estack", "_ebss", "_sbss", "_sdata", "_edata",
@@ -153,7 +154,56 @@ def print_row(label, size, total, max_label=42):
     print(f"  {label_t:<{max_label}}  {fmt_size(size)}  {pct(size, total)}  {bar(frac)}")
 
 
+def parse_memory_size(value):
+    """Parse a linker-script size such as 32K or 65536."""
+    match = re.fullmatch(r"(0x[0-9a-fA-F]+|[0-9]+)\s*([KkMm]?)", value)
+    if not match:
+        raise ValueError(f"Unsupported linker memory size: {value}")
+    amount = int(match.group(1), 0)
+    suffix = match.group(2).lower()
+    return amount * {"": 1, "k": 1024, "m": 1024 * 1024}[suffix]
+
+
+def parse_memory_regions(linker_script):
+    """Read FLASH and RAM origin/length values from a GNU ld script."""
+    text = Path(linker_script).read_text(encoding="utf-8")
+    regions = {}
+    for name in ("FLASH", "RAM"):
+        match = re.search(
+            rf"\b{name}\s*\([^)]*\)\s*:\s*ORIGIN\s*=\s*([^,]+),\s*LENGTH\s*=\s*([^\s}}]+)",
+            text,
+        )
+        if not match:
+            raise ValueError(f"Could not find {name} memory region in {linker_script}")
+        regions[name] = {
+            "origin": int(match.group(1).strip(), 0),
+            "size": parse_memory_size(match.group(2).strip()),
+        }
+    return regions
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--elf", default=ELF, help="ELF file to inspect")
+    parser.add_argument(
+        "--linker-script",
+        help="GNU ld script used for the ELF; derives FLASH/RAM capacities",
+    )
+    return parser.parse_args()
+
+
 def main():
+    global ELF, FLASH_ORIGIN, FLASH_SIZE, RAM_ORIGIN, RAM_SIZE
+
+    args = parse_args()
+    ELF = args.elf
+    if args.linker_script:
+        regions = parse_memory_regions(args.linker_script)
+        FLASH_ORIGIN = regions["FLASH"]["origin"]
+        FLASH_SIZE = regions["FLASH"]["size"]
+        RAM_ORIGIN = regions["RAM"]["origin"]
+        RAM_SIZE = regions["RAM"]["size"]
+
     elf = Path(ELF)
     if not elf.exists():
         print(f"ELF not found: {ELF}  (run 'make' first)", file=sys.stderr)
@@ -169,9 +219,12 @@ def main():
             if fallback:
                 sym["source"] = fallback
 
-    flash_used = sum(s["size"] for n, s in sections.items() if n in FLASH_SECTIONS)
     data_sz = sections.get(".data", {"size": 0})["size"]
-    flash_used += data_sz
+    flash_used = sum(
+        section["size"]
+        for section in sections.values()
+        if addr_to_region(section["addr"]) == "FLASH"
+    ) + data_sz
 
     ram_used = sum(s["size"] for n, s in sections.items() if n in RAM_SECTIONS)
 

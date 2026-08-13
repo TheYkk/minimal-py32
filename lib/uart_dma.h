@@ -38,11 +38,11 @@
 // UART_println(s)          Print string with newline
 // UART_newline()           Send newline
 //
-// USART1 pin mapping (set below in UART parameters):
-// --------------------------------------------------
-// UART_MAP   0     1     2     3     4     5     6     7
-// TX-pin    PA2   PA7   PA9   PA14  PA14  PB6   PF1   No mapping
-// RX-pin    PA3   PA8   PA10  PA13  PA15  PB7   PF0   No mapping
+// PY32F030 USART1 pin mapping (set below in UART parameters):
+// ---------------------------------------------------------------
+// UART_MAP   0     2     4     5
+// TX-pin    PA2   PA9   PA14  PB6
+// RX-pin    PA3   PA10  PA15  PB7
 //
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
 
@@ -58,8 +58,16 @@ extern "C" {
 #define UART_BAUD             115200    // default UART baud rate
 #define UART_RX_BUF_SIZE      64        // UART RX buffer size
 #define UART_MAP              0         // UART pin mapping (see above)
+
+#if defined(PY32F030) && (UART_MAP != 0) && (UART_MAP != 2) && (UART_MAP != 4) && (UART_MAP != 5)
+  #error UART_MAP is not a PY32F030 full-duplex USART1 mapping; use 0, 2, 4, or 5
+#endif
 #define UART_DMA_CHANNEL      1         // DMA channel (1 - 3)
 #define UART_PRINT            0         // 1: include print functions (needs print.h)
+
+#if SYS_USE_VECTORS == 0
+  #error Interrupt vector table must be enabled (SYS_USE_VECTORS in system.h)!
+#endif
 
 // UART macros
 #define UART_ready()          (USART1->SR & USART_SR_TXE)     // ready to write
@@ -84,6 +92,8 @@ void UART_init(void);                   // init UART with default BAUD rate
 char UART_read(void);                   // read character via UART
 void UART_write(const char c);          // send character via UART
 uint8_t UART_available(void);           // check if there is something to read
+uint8_t UART_overflowed(void);           // check whether unread data was overwritten
+void UART_clearOverflow(void);           // clear the RX overflow indication
 
 // Additional print functions (if activated, see above)
 #if UART_PRINT == 1
@@ -103,12 +113,23 @@ uint8_t UART_available(void);           // check if there is something to read
 #if   UART_DMA_CHANNEL == 1
   #define UART_DMA_CHAN   DMA1_Channel1
   #define UART_DMA_POS    SYSCFG_CFGR3_DMA1_MAP_Pos
+  #define UART_DMA_SHIFT  0
+  #define UART_DMA_IRQn   DMA1_Channel1_IRQn
+  #define UART_DMA_ISR    DMA1_Channel1_IRQHandler
 #elif UART_DMA_CHANNEL == 2
   #define UART_DMA_CHAN   DMA1_Channel2
   #define UART_DMA_POS    SYSCFG_CFGR3_DMA2_MAP_Pos
+  #define UART_DMA_SHIFT  4
+  #define UART_DMA_IRQn   DMA1_Channel2_3_IRQn
+  #define UART_DMA_ISR    DMA1_Channel2_3_IRQHandler
 #elif UART_DMA_CHANNEL == 3
   #define UART_DMA_CHAN   DMA1_Channel3
   #define UART_DMA_POS    SYSCFG_CFGR3_DMA3_MAP_Pos
+  #define UART_DMA_SHIFT  8
+  #define UART_DMA_IRQn   DMA1_Channel2_3_IRQn
+  #define UART_DMA_ISR    DMA1_Channel2_3_IRQHandler
+#else
+  #error UART_DMA_CHANNEL must be 1, 2, or 3
 #endif
 
 #ifdef __cplusplus

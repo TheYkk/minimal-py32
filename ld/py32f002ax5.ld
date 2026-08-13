@@ -133,12 +133,5 @@ SECTIONS
   PROVIDE(end = . );
   PROVIDE(_estack = ORIGIN(RAM) + LENGTH(RAM));	
 
-  /DISCARD/ :
-  {
-    libc.a ( * )
-    libm.a ( * )
-    libgcc.a ( * )
-  }
-
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }

@@ -1,3 +1,2 @@
 pack:
   - ./Puya.PY32F0xx_DFP.1.2.8.pack
-target_override: py32f030x6

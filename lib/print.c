@@ -92,7 +92,7 @@ static void _vfprintf(void (*putchar) (char c), const char* str,  va_list arp) {
       s = 1;
     }
     while((d >= '0') && (d <= '9')) {
-      w += w * 10 + (d - '0');
+      w = w * 10 + (d - '0');
       d = *str++;
     }
     if(s) w = -w;
@@ -121,26 +121,31 @@ void _itoa(void (*putchar) (char c), int32_t val, int8_t rad, int8_t len) {
   char c, sgn = 0, pad = ' ';
   char s[20];
   uint8_t i = 0;
+  uint32_t magnitude;
 
   if(rad < 0) {
     rad = -rad;
     if(val < 0) {
-      val = -val;
+      magnitude = 0U - (uint32_t)val;
       sgn = '-';
+    } else {
+      magnitude = (uint32_t)val;
     }
+  } else {
+    magnitude = (uint32_t)val;
   }
   if(len < 0) {
     len = -len;
     pad = '0';
   }
-  if(len > 20) return;
+  if(len > (int8_t)sizeof(s)) return;
   do {
-    c = (char)((uint32_t)val % rad);
+    c = (char)(magnitude % (uint32_t)rad);
     if (c >= 10) c += ('A' - 10);
     else c += '0';
     s[i++] = c;
-    val = (uint32_t)val / rad;
-  } while(val);
+    magnitude /= (uint32_t)rad;
+  } while(magnitude);
   if((sgn != 0) && (pad != '0')) s[i++] = sgn;
   while(i < len) s[i++] = pad;
   if((sgn != 0) && (pad == '0')) s[i++] = sgn;

@@ -5,6 +5,33 @@
 
 #include "i2c_tx.h"
 
+volatile I2C_Status I2C_status = I2C_STATUS_OK;
+
+#define I2C_ERROR_FLAGS (I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_AF | I2C_SR1_OVR)
+
+static void I2C_abort(void)
+{
+  I2C1->CR1 |= I2C_CR1_STOP;
+  I2C1->SR1 = 0;
+}
+
+static uint8_t I2C_wait(volatile uint32_t *reg, uint32_t mask)
+{
+  uint32_t timeout = I2C_TIMEOUT_LOOPS;
+  while (timeout--) {
+    uint32_t status = I2C1->SR1;
+    if (status & I2C_ERROR_FLAGS) {
+      I2C_status = (status & I2C_SR1_AF) ? I2C_STATUS_NACK : I2C_STATUS_BUS_ERROR;
+      I2C_abort();
+      return 0;
+    }
+    if ((*reg & mask) != 0) return 1;
+  }
+  I2C_status = I2C_STATUS_TIMEOUT;
+  I2C_abort();
+  return 0;
+}
+
 // Init I2C
 void I2C_init(void) {
   // Setup GPIO pins
@@ -31,7 +58,7 @@ void I2C_init(void) {
     GPIOA->AFR[1]   = (GPIOA->AFR[1] & ~(                            ((uint32_t)15  <<(0<<2)) ))
                                      |  (                            ((uint32_t)12  <<(0<<2)) );
   #elif I2C_MAP == 2
-    // Setup pin PA9 (SDA) and pin PA10 (SCL), alternate function with open-drain an pullup
+    // Setup pin PA10 (SDA) and pin PA9 (SCL), alternate function with open-drain and pullup
     RCC->IOPENR    |= RCC_IOPENR_GPIOAEN;
     GPIOA->MODER    = (GPIOA->MODER  & ~( ((uint32_t)0b11<<(9<<1)) | ((uint32_t)0b11<<(10<<1)) ))
                                      |  ( ((uint32_t)0b10<<(9<<1)) | ((uint32_t)0b10<<(10<<1)) );
@@ -39,7 +66,7 @@ void I2C_init(void) {
     GPIOA->PUPDR    = (GPIOA->PUPDR  & ~( ((uint32_t)0b11<<(9<<1)) | ((uint32_t)0b11<<(10<<1)) ))
                                      |  ( ((uint32_t)0b01<<(9<<1)) | ((uint32_t)0b01<<(10<<1)) );
     GPIOA->AFR[1]   = (GPIOA->AFR[1] & ~( ((uint32_t)15  <<(1<<2)) | ((uint32_t)15  <<( 2<<2)) ))
-                                     |  ( ((uint32_t)12  <<(1<<2)) | ((uint32_t)12  <<( 2<<2)) );
+                                     |  ( ((uint32_t)6   <<(1<<2)) | ((uint32_t)6   <<( 2<<2)) );
   #elif I2C_MAP == 3
     // Setup pin PA12 (SDA) and pin PA11 (SCL), alternate function with open-drain an pullup
     RCC->IOPENR    |= RCC_IOPENR_GPIOAEN;
@@ -88,14 +115,14 @@ void I2C_init(void) {
 
   // Setup and enable I2C
   RCC->APBENR1 |= RCC_APBENR1_I2CEN;              // enable I2C module clock
-  I2C1->CR2     = 4;                              // set input clock rate
+  I2C1->CR2     = (F_CPU / 1000000U) & I2C_CR2_FREQ; // set APB clock rate in MHz
   #if I2C_CLKRATE > 100000
   I2C1->CCR     = (F_CPU / (3 * I2C_CLKRATE))     // set clock division factor
                 | I2C_CCR_FS;                     // enable fast mode (400kHz)
-  I2C1->TRISE   = 16;                             // set maximum rise time (300ns)
+  I2C1->TRISE   = ((F_CPU / 1000000U) * 300U + 999U) / 1000U + 1U; // 300ns rise time
   #else
   I2C1->CCR     = (F_CPU / (2 * I2C_CLKRATE));    // set clock and standard mode (100kHz)
-  I2C1->TRISE   = 16;                             // set maximum rise time (1000ns)
+  I2C1->TRISE   = (F_CPU / 1000000U) + 1U;        // 1000ns rise time
   #endif
   I2C1->CR1     = I2C_CR1_PE;                     // enable I2C
 }
@@ -104,29 +131,37 @@ void I2C_init(void) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 void I2C_start(uint8_t addr) {
-  while(I2C1->SR2 & I2C_SR2_BUSY);                // wait until bus ready
-  I2C1->CR1 |= I2C_CR1_START;                     // set START condition
-  while(!(I2C1->SR1 & I2C_SR1_SB));               // wait for START generated
-  I2C1->DR = addr;                                // send slave address + R/W bit
-  while(!(I2C1->SR1 & I2C_SR1_ADDR));             // wait for address transmitted
-  uint16_t reg = I2C1->SR2;                       // clear flags
+  I2C_status = I2C_STATUS_OK;
+  uint32_t timeout = I2C_TIMEOUT_LOOPS;
+  while (I2C1->SR2 & I2C_SR2_BUSY) {
+    if (!timeout--) {
+      I2C_status = I2C_STATUS_TIMEOUT;
+      I2C_abort();
+      return;
+    }
+  }
+  I2C1->CR1 |= I2C_CR1_START;
+  if (!I2C_wait(&I2C1->SR1, I2C_SR1_SB)) return;
+  I2C1->DR = addr;
+  if (!I2C_wait(&I2C1->SR1, I2C_SR1_ADDR)) return;
+  (void)I2C1->SR2;
 }
 #pragma GCC diagnostic pop
 
 // Send data byte via I2C bus
 void I2C_write(uint8_t data) {
-  while(!(I2C1->SR1 & I2C_SR1_TXE));              // wait for last byte transmitted
-  I2C1->DR = data;                                // send data byte
+  if (I2C_wait(&I2C1->SR1, I2C_SR1_TXE))
+    I2C1->DR = data;
 }
 
 // Stop I2C transmission
 void I2C_stop(void) {
-  while(!(I2C1->SR1 & I2C_SR1_BTF));              // wait for last byte transmitted
-  I2C1->CR1 |= I2C_CR1_STOP;                      // set STOP condition
+  if (I2C_status == I2C_STATUS_OK && I2C_wait(&I2C1->SR1, I2C_SR1_BTF))
+    I2C1->CR1 |= I2C_CR1_STOP;
 }
 
 // Send data buffer via I2C bus and stop
 void I2C_writeBuffer(uint8_t* buf, uint16_t len) {
-  while(len--) I2C_write(*buf++);           // write buffer
-  I2C_stop();                               // stop transmission
+  while (len-- && I2C_status == I2C_STATUS_OK) I2C_write(*buf++);
+  I2C_stop();
 }
