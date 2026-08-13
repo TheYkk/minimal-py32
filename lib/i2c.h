@@ -35,6 +35,18 @@ extern "C" {
 // I2C Parameters
 #define I2C_CLKRATE   400000    // I2C bus clock rate (Hz)
 #define I2C_MAP       6         // I2C pin mapping (see above)
+#define I2C_TIMEOUT_LOOPS 1000000UL // maximum polling iterations per operation
+
+typedef enum
+{
+    I2C_STATUS_OK = 0,
+    I2C_STATUS_TIMEOUT,
+    I2C_STATUS_BUS_ERROR,
+    I2C_STATUS_NACK,
+} I2C_Status;
+
+extern volatile I2C_Status I2C_status;
+#define I2C_getStatus() I2C_status
 
 // I2C Functions
 void I2C_init(void);            // I2C init function

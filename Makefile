@@ -12,9 +12,11 @@ BIN     := bin
 LIBFILES := $(LIB)/debug_serial.c 
 
 # Microcontroller Settings
-F_CPU   := 48000000
-MODEL   := py32f030x6
-LDSCRIPT:= ld/$(MODEL).ld
+F_CPU   ?= 48000000
+MODEL   ?= py32f030x6
+LDSCRIPT ?= ld/$(MODEL).ld
+DUMP_SIZE ?= $(shell awk '/^  FLASH/{ value=$$NF; sub("K", "", value); printf "0x%X", value * 1024; exit }' $(LDSCRIPT))
+MODEL_FAMILY := $(shell printf '%s' '$(MODEL)' | sed 's/\(py32f[0-9]*\).*/\1/' | tr '[:lower:]' '[:upper:]')
 CPUARCH := -mcpu=cortex-m0plus -mthumb
 
 # Toolchain
@@ -26,8 +28,8 @@ OBJSIZE := $(PREFIX)-size
 
 # Compiler Flags
 CFLAGS  := -ggdb -Os $(CPUARCH) -DF_CPU=$(F_CPU) -I$(SOURCE) -I$(LIB) -I.
-CFLAGS  += -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall -D$(MODEL)
-LDFLAGS := -T$(LDSCRIPT) #-static -lc -lm -nostartfiles -nostdlib -lgcc
+CFLAGS  += -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall -D$(MODEL) -D$(MODEL_FAMILY)
+LDFLAGS := -T$(LDSCRIPT) -Wl,-Map=$(BIN)/$(TARGET).map
 LDFLAGS += -Wl,--gc-sections,--build-id=none --specs=nano.specs --specs=nosys.specs -Wl,--print-memory-usage
 CFILES  := $(wildcard ./*.c) $(wildcard $(SOURCE)/*.c) $(wildcard $(SOURCE)/*.S) $(LIBFILES)
 HFILES  := $(wildcard ./*.h) $(wildcard $(SOURCE)/*.h) $(wildcard $(LIB)/*.h)
@@ -47,8 +49,8 @@ $(BIN)/$(TARGET).lst: $(BIN)/$(TARGET).elf
 	@$(OBJDUMP) -S $^ > $(BIN)/$(TARGET).lst
 
 $(BIN)/$(TARGET).map: $(BIN)/$(TARGET).elf
-	@echo "Building $(BIN)/$(TARGET).map ..."
-	@$(OBJDUMP) -t $^ > $(BIN)/$(TARGET).map
+	@if [ ! -s "$@" ]; then $(MAKE) --no-print-directory -B $(BIN)/$(TARGET).elf; fi
+	@test -s $@
 
 $(BIN)/$(TARGET).bin: $(BIN)/$(TARGET).elf
 	@echo "Building $(BIN)/$(TARGET).bin ..."
@@ -64,7 +66,7 @@ $(BIN)/$(TARGET).asm: $(BIN)/$(TARGET).elf
 
 
 $(BIN)/$(TARGET)_dump.bin:
-	pyocd cmd -t $(MODEL) -f 1m -c reset halt -c savemem 0x08000000 0x6000 $(BIN)/$(TARGET)_dump.bin
+	pyocd cmd -t $(MODEL) -f 1m -c reset halt -c savemem 0x08000000 $(DUMP_SIZE) $(BIN)/$(TARGET)_dump.bin
 
 elf:	$(BIN)/$(TARGET).elf
 
@@ -102,14 +104,14 @@ compile_commands:
 	@python3 -c "\
 import json, os; \
 root = os.getcwd(); \
-flags = '-I$(SOURCE) -I$(LIB) -DF_CPU=$(F_CPU) -D$(MODEL) $(CPUARCH) -ggdb -Os -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall'; \
+flags = '-I$(SOURCE) -I$(LIB) -DF_CPU=$(F_CPU) -D$(MODEL) -D$(MODEL_FAMILY) $(CPUARCH) -ggdb -Os -fdata-sections -ffunction-sections -fno-builtin -fno-common -Wall'; \
 files = '$(CFILES)'.split(); \
 entries = [{'directory': root, 'file': os.path.join(root, f), 'command': '$(CC) ' + flags + ' -c ' + f} for f in files]; \
 fp = open('compile_commands.json', 'w'); json.dump(entries, fp, indent=2); fp.write('\n')"
 	@echo "Generated compile_commands.json"
 
 size:	$(BIN)/$(TARGET).elf
-	@python3 size_analysis.py
+	@python3 size_analysis.py --linker-script "$(LDSCRIPT)"
 
 clean:
 	@echo "Cleaning all up ..."

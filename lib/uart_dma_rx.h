@@ -39,6 +39,10 @@ extern "C" {
 #define UART_MAP              0         // UART pin mapping (see above)
 #define UART_DMA_CHANNEL      1         // DMA channel (1 - 3)
 
+#if SYS_USE_VECTORS == 0
+  #error Interrupt vector table must be enabled (SYS_USE_VECTORS in system.h)!
+#endif
+
 // UART macros
 #define UART_enable()         USART1->CR1 |= USART_CR1_UE         // enable USART
 #define UART_disable()        USART1->CR1 &= ~USART_CR1_UE        // disable USART
@@ -54,17 +58,30 @@ extern "C" {
 void UART_init(void);         // init UART with default BAUD rate
 char UART_read(void);         // read character via UART
 uint8_t UART_available(void); // check if there is something to read
+uint8_t UART_overflowed(void); // check whether unread data was overwritten
+void UART_clearOverflow(void); // clear the RX overflow indication
 
 // DMA channel defines
 #if   UART_DMA_CHANNEL == 1
   #define UART_DMA_CHAN       DMA1_Channel1
   #define UART_DMA_POS        SYSCFG_CFGR3_DMA1_MAP_Pos
+  #define UART_DMA_SHIFT      0
+  #define UART_DMA_IRQn       DMA1_Channel1_IRQn
+  #define UART_DMA_ISR        DMA1_Channel1_IRQHandler
 #elif UART_DMA_CHANNEL == 2
   #define UART_DMA_CHAN       DMA1_Channel2
   #define UART_DMA_POS        SYSCFG_CFGR3_DMA2_MAP_Pos
+  #define UART_DMA_SHIFT      4
+  #define UART_DMA_IRQn       DMA1_Channel2_3_IRQn
+  #define UART_DMA_ISR        DMA1_Channel2_3_IRQHandler
 #elif UART_DMA_CHANNEL == 3
   #define UART_DMA_CHAN       DMA1_Channel3
   #define UART_DMA_POS        SYSCFG_CFGR3_DMA3_MAP_Pos
+  #define UART_DMA_SHIFT      8
+  #define UART_DMA_IRQn       DMA1_Channel2_3_IRQn
+  #define UART_DMA_ISR        DMA1_Channel2_3_IRQHandler
+#else
+  #error UART_DMA_CHANNEL must be 1, 2, or 3
 #endif
 
 #ifdef __cplusplus

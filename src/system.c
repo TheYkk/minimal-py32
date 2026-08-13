@@ -22,6 +22,8 @@ void SYS_init(void)
 
 // Init SYSTICK
 #if SYS_TICK_INIT > 0
+    SysTick->LOAD = DLY_MS_TIME - 1U;
+    SysTick->VAL = 0;
     SysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_CLKSOURCE | SysTick_CTRL_TICKINT;
 #endif
 
@@ -168,10 +170,13 @@ void RTC_setAlarm(uint32_t val)
 // Wait n+1 counts of SysTick
 void DLY_ticks(uint32_t n)
 {
+    uint32_t reload = SysTick->LOAD;
     SysTick->LOAD = n;
     SysTick->VAL = 0;
     while (!(SysTick->CTRL & SysTick_CTRL_COUNTFLAG))
         ;
+    SysTick->LOAD = reload;
+    SysTick->VAL = 0;
 }
 
 // ===================================================================================
@@ -351,11 +356,12 @@ extern void _estack(void);
 // Prototypes
 int main(void) __attribute__((section(".text.main"), used));
 void (*const vectors[])(void) __attribute__((section(".isr_vector"), used));
+void Reset_Handler_C(void) __attribute__((section(".text.irq_handler"), used, noreturn));
 void Reset_Handler(void) __attribute__((section(".text.irq_handler"), naked, used, noreturn));
 
 #if SYS_USE_VECTORS > 0
 // Unless a specific handler is overridden, it just spins forever
-void Default_Handler(void) __attribute__((section(".text.irq_handler"), naked, used));
+void Default_Handler(void) __attribute__((section(".text.irq_handler"), used));
 void Default_Handler(void)
 {
     while (1)
@@ -461,16 +467,19 @@ void (*const vectors[])(void) = {
 #endif                              // SYS_USE_VECTORS > 0
 };
 
-// Reset handler
+// Reset entry stub. The stack pointer must be established before entering C.
 void Reset_Handler(void)
 {
-    uint32_t *src, *dst;
+    __asm volatile(
+        "ldr r0, =_estack\n"
+        "mov sp, r0\n"
+        "b Reset_Handler_C\n");
+}
 
-    // Set stack pointer
-    asm volatile(
-        " ldr r0, =_estack  \n\
-    mov sp, r0        \n"
-        : : : "r0", "memory");
+// Reset handler implementation; this function is entered with a valid stack.
+void Reset_Handler_C(void)
+{
+    uint32_t *src, *dst;
 
     // Configure vector table location
     SCB->VTOR = (uint32_t)vectors;

@@ -8,7 +8,45 @@
 // Circular RX buffer
 char UART_RX_buffer[UART_RX_BUF_SIZE];
 uint8_t UART_RX_tptr = 0;
-#define UART_RX_hptr (UART_RX_BUF_SIZE - UART_DMA_CHAN->CNDTR)
+static volatile uint32_t UART_RX_dma_wraps = 0;
+static volatile uint32_t UART_RX_consumed = 0;
+static volatile uint8_t UART_RX_overflow = 0;
+
+static uint32_t UART_rxProduced(void)
+{
+  uint32_t primask = __get_PRIMASK();
+  uint32_t wraps;
+  uint32_t head;
+
+  __disable_irq();
+  wraps = UART_RX_dma_wraps;
+  head = UART_RX_BUF_SIZE - UART_DMA_CHAN->CNDTR;
+  if (head >= UART_RX_BUF_SIZE)
+    head = 0;
+  // The DMA may have wrapped before its transfer-complete IRQ is serviced.
+  if (DMA1->ISR & ((uint32_t)1 << (UART_DMA_SHIFT + 1)))
+    wraps++;
+  __set_PRIMASK(primask);
+  return wraps * UART_RX_BUF_SIZE + head;
+}
+
+static void UART_updateRx(uint32_t produced)
+{
+  if (produced - UART_RX_consumed >= UART_RX_BUF_SIZE) {
+    UART_RX_consumed = produced - (UART_RX_BUF_SIZE - 1U);
+    UART_RX_tptr = (uint8_t)(UART_RX_consumed % UART_RX_BUF_SIZE);
+    UART_RX_overflow = 1;
+  }
+}
+
+uint8_t UART_overflowed(void) {
+  UART_updateRx(UART_rxProduced());
+  return UART_RX_overflow;
+}
+
+void UART_clearOverflow(void) {
+  UART_RX_overflow = 0;
+}
 
 // Init UART
 void UART_init(void) {
@@ -103,20 +141,38 @@ void UART_init(void) {
   UART_DMA_CHAN->CPAR  = (uint32_t)&USART1->DR;       // peripheral address
   UART_DMA_CHAN->CCR   = DMA_CCR_MINC                 // increment memory address
                        | DMA_CCR_CIRC                 // circular mode
+                       | DMA_CCR_TCIE                 // track completed buffer wraps
+                       | DMA_CCR_TEIE                 // report DMA errors
                        | DMA_CCR_EN;                  // enable
+  DMA1->IFCR = (uint32_t)0xF << UART_DMA_SHIFT;
+  NVIC_EnableIRQ(UART_DMA_IRQn);
 }
 
-// Check if something is in the RX buffer
+void UART_DMA_ISR(void) __attribute__((interrupt));
+void UART_DMA_ISR(void)
+{
+  uint32_t flags = DMA1->ISR;
+  uint32_t channel_flags = (uint32_t)0xF << UART_DMA_SHIFT;
+  DMA1->IFCR = channel_flags;
+  if (flags & ((uint32_t)1 << (UART_DMA_SHIFT + 3)))
+    UART_RX_overflow = 1;
+  if (flags & ((uint32_t)1 << (UART_DMA_SHIFT + 1)))
+    UART_RX_dma_wraps++;
+}
+
 uint8_t UART_available(void) {
-  return(UART_RX_hptr != UART_RX_tptr);
+  uint32_t produced = UART_rxProduced();
+  UART_updateRx(produced);
+  return produced != UART_RX_consumed;
 }
 
 // Read from UART buffer
 char UART_read(void) {
   char result;
   while(!UART_available());
-  result = UART_RX_buffer[UART_RX_tptr++];
-  if(UART_RX_tptr >= UART_RX_BUF_SIZE) UART_RX_tptr = 0;
+  result = UART_RX_buffer[UART_RX_tptr];
+  UART_RX_consumed++;
+  UART_RX_tptr = (uint8_t)(UART_RX_consumed % UART_RX_BUF_SIZE);
   return result;
 }
 

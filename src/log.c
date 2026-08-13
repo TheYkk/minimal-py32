@@ -56,11 +56,11 @@ static const uint32_t *s_systick = NULL;
  * @param  size - number of bytes to write
  * @return The number of bytes written, or 0 if the file descriptor is unsupported.
  */
-int _write(int fd, const char *buf, int size)
+int _write(int fd, const void *buf, int size)
 {
     if (fd == SEMIHOST_STDOUT || fd == SEMIHOST_STDERR)
     {
-        int32_t args[3] = {fd, (int32_t)buf, size};
+        int32_t args[3] = {fd, (int32_t)(uintptr_t)buf, size};
         return SEMIHOST_SysCall(SYS_WRITE, &args[0]);
     }
     return 0; // Unsupported file descriptor
@@ -94,7 +94,7 @@ void LOG_Init(const LogLevel_e level, const uint32_t *const systick)
  * @return None
  * */
 #if (CONFIG_DEBUG_ENABLE_LOGS)
-void LOG(const LogLevel_e level, const char *tag, char *format, ...)
+void LOG(const LogLevel_e level, const char *tag, const char *format, ...)
 {
     if (level < s_maxLogLevel)
     {

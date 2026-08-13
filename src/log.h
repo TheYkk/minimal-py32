@@ -60,7 +60,7 @@ void LOG_Init(const LogLevel_e level, const uint32_t *const systick);
 // Module exported variables
 //------------------------------------------------------------------------------
 #if (CONFIG_DEBUG_ENABLE_LOGS)
-void LOG(const LogLevel_e type, const char *tag, char *format, ...);
+void LOG(const LogLevel_e type, const char *tag, const char *format, ...);
 #endif
 
 //------------------------------------------------------------------------------

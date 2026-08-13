@@ -539,7 +539,7 @@ void deeep_sleep(void)
 
     __SEV();
     __WFE(); // Drain stale event register (returns immediately)
-    __WFE(); // Enter stop mode. Wakes when LPTIM reaches 1000ms.
+    __WFE(); // Enter stop mode. Wakes when LPTIM reaches 2000ms.
 
     SCB->SCR &= ~(SCB_SCR_SLEEPDEEP_Msk | SCB_SCR_SEVONPEND_Msk);
 
@@ -555,5 +555,5 @@ void deeep_sleep(void)
 
     // 8. Restore SysTick and compensate time
     SysTick->CTRL = systick_ctrl;
-    s_systick += 2000; // Manually add the 1000ms we were asleep
+    s_systick += 2000; // Compensate for the 2000ms spent asleep
 }

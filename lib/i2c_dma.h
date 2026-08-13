@@ -9,6 +9,7 @@
 // I2C_write(b)             I2C transmit one data byte via I2C
 // I2C_read(ack)            I2C receive one data byte (set ack=0 for last byte)
 // I2C_stop()               I2C stop transmission
+// I2C_waitComplete()      Wait for DMA transfer and return success
 // I2C_busy()               Check if I2C bus is busy transmitting
 //
 // I2C_sendBuffer(addr,buf,len) Send buffer (*buf) with length (len) to device (addr)
@@ -36,6 +37,19 @@ extern "C" {
 // I2C parameters
 #define I2C_CLKRATE       400000  // I2C bus clock rate (Hz)
 #define I2C_MAP           6       // I2C pin mapping (see above)
+#define I2C_TIMEOUT_LOOPS 1000000UL // maximum polling iterations per operation
+
+typedef enum
+{
+    I2C_STATUS_OK = 0,
+    I2C_STATUS_BUSY,
+    I2C_STATUS_TIMEOUT,
+    I2C_STATUS_BUS_ERROR,
+    I2C_STATUS_NACK,
+} I2C_Status;
+
+extern volatile I2C_Status I2C_status;
+#define I2C_getStatus() I2C_status
 #define I2C_DMA_CHANNEL   1       // DMA channel (1 - 3)
 
 // Interrupt enable check
@@ -51,6 +65,7 @@ void I2C_write(uint8_t data);     // I2C transmit one data byte via I2C
 uint8_t I2C_read(uint8_t ack);    // I2C receive one data byte from the slave
 
 void I2C_writeBuffer(uint8_t* buf, uint16_t len);
+uint8_t I2C_waitComplete(void);
 void I2C_readBuffer(uint8_t* buf, uint16_t len);
 
 #define I2C_sendBuffer(addr,buf,len)  {I2C_start(addr); I2C_writeBuffer(buf,len);}
