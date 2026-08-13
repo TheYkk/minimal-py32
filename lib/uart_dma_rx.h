@@ -18,10 +18,10 @@
 // UART_enable()            Enable USART
 // UART_disable()           Disable USART
 //
-// USART1 pin mapping (set below in UART parameters):
-// --------------------------------------------------
-// UART_MAP   0    1    2    3     4     5     6    7    8
-// RX-pin    PA3  PA8  PA9  PA10  PA13  PA15  PB2  PB7  PF0  
+// PY32F030 USART1 RX pin mapping (set below in UART parameters):
+// --------------------------------------------------------------
+// UART_MAP   0    3     5     6    7
+// RX-pin    PA3  PA10  PA15  PB2  PB7
 //
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
 
@@ -37,6 +37,10 @@ extern "C" {
 #define UART_BAUD             115200    // default UART baud rate
 #define UART_RX_BUF_SIZE      64        // UART RX buffer size
 #define UART_MAP              0         // UART pin mapping (see above)
+
+#if defined(PY32F030) && (UART_MAP != 0) && (UART_MAP != 3) && (UART_MAP != 5) && (UART_MAP != 6) && (UART_MAP != 7)
+  #error UART_MAP is not a PY32F030 USART1 RX mapping; use 0, 3, 5, 6, or 7
+#endif
 #define UART_DMA_CHANNEL      1         // DMA channel (1 - 3)
 
 #if SYS_USE_VECTORS == 0

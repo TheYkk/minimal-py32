@@ -61,7 +61,7 @@ void I2C_init(void) {
     GPIOA->AFR[1]   = (GPIOA->AFR[1] & ~(                            ((uint32_t)15  <<(0<<2)) ))
                                      |  (                            ((uint32_t)12  <<(0<<2)) );
   #elif I2C_MAP == 2
-    // Setup pin PA9 (SDA) and pin PA10 (SCL), alternate function with open-drain an pullup
+    // Setup pin PA10 (SDA) and pin PA9 (SCL), alternate function with open-drain and pullup
     RCC->IOPENR    |= RCC_IOPENR_GPIOAEN;
     GPIOA->MODER    = (GPIOA->MODER  & ~( ((uint32_t)0b11<<(9<<1)) | ((uint32_t)0b11<<(10<<1)) ))
                                      |  ( ((uint32_t)0b10<<(9<<1)) | ((uint32_t)0b10<<(10<<1)) );
@@ -69,7 +69,7 @@ void I2C_init(void) {
     GPIOA->PUPDR    = (GPIOA->PUPDR  & ~( ((uint32_t)0b11<<(9<<1)) | ((uint32_t)0b11<<(10<<1)) ))
                                      |  ( ((uint32_t)0b01<<(9<<1)) | ((uint32_t)0b01<<(10<<1)) );
     GPIOA->AFR[1]   = (GPIOA->AFR[1] & ~( ((uint32_t)15  <<(1<<2)) | ((uint32_t)15  <<( 2<<2)) ))
-                                     |  ( ((uint32_t)12  <<(1<<2)) | ((uint32_t)12  <<( 2<<2)) );
+                                     |  ( ((uint32_t)6   <<(1<<2)) | ((uint32_t)6   <<( 2<<2)) );
   #elif I2C_MAP == 3
     // Setup pin PA12 (SDA) and pin PA11 (SCL), alternate function with open-drain an pullup
     RCC->IOPENR    |= RCC_IOPENR_GPIOAEN;

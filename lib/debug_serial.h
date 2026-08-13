@@ -18,10 +18,10 @@
 // DEBUG_newline()          Send newline
 // DEBUG_printf(s, ...)     Uses printf (supports %s, %c, %d, %u, %x, %b, %02d, %%)
 //
-// UART TX pin mapping (set below in DEBUG parameters):
-// ----------------------------------------------------
-// DEBUG_TX    0     1     2     3     4     5     6     7     8     9
-// TX-pin     PA2   PA7   PA9   PA10  PA14  PB6   PB8   PF1   PF3   No mapping
+// PY32F030 USART1 TX pin mapping (set below in DEBUG parameters):
+// ---------------------------------------------------------------
+// DEBUG_TX    0     2     4     5     8
+// TX-pin     PA2   PA9   PA14  PB6   PF3
 //
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
 
@@ -35,7 +35,11 @@ extern "C" {
 
 // DEBUG parameters
 #define DEBUG_ENABLE 1      // enable serial DEBUG (0:no, 1:yes)
-#define DEBUG_TX     1      // UART TX pin mapping (see above)
+#define DEBUG_TX     0      // UART TX pin mapping (see above)
+
+#if defined(PY32F030) && (DEBUG_TX != 0) && (DEBUG_TX != 2) && (DEBUG_TX != 4) && (DEBUG_TX != 5) && (DEBUG_TX != 8)
+  #error DEBUG_TX is not a PY32F030 USART1 TX mapping; use 0, 2, 4, 5, or 8
+#endif
 #define DEBUG_BAUD   115200 // default UART baud rate
 
 // DEBUG functions and macros

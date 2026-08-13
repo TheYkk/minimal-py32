@@ -38,11 +38,11 @@
 // UART_println(s)          Print string with newline
 // UART_newline()           Send newline
 //
-// USART1 pin mapping (set below in UART parameters):
-// --------------------------------------------------
-// UART_MAP   0     1     2     3     4     5     6     7
-// TX-pin    PA2   PA7   PA9   PA14  PA14  PB6   PF1   No mapping
-// RX-pin    PA3   PA8   PA10  PA13  PA15  PB7   PF0   No mapping
+// PY32F030 USART1 pin mapping (set below in UART parameters):
+// ---------------------------------------------------------------
+// UART_MAP   0     2     4     5
+// TX-pin    PA2   PA9   PA14  PB6
+// RX-pin    PA3   PA10  PA15  PB7
 //
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
 
@@ -58,6 +58,10 @@ extern "C" {
 #define UART_BAUD             115200    // default UART baud rate
 #define UART_RX_BUF_SIZE      64        // UART RX buffer size
 #define UART_MAP              0         // UART pin mapping (see above)
+
+#if defined(PY32F030) && (UART_MAP != 0) && (UART_MAP != 2) && (UART_MAP != 4) && (UART_MAP != 5)
+  #error UART_MAP is not a PY32F030 full-duplex USART1 mapping; use 0, 2, 4, or 5
+#endif
 #define UART_DMA_CHANNEL      1         // DMA channel (1 - 3)
 #define UART_PRINT            0         // 1: include print functions (needs print.h)
 
